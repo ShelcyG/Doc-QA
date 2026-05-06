@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Document Q&A</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      height: 100vh;
+    }
+
+    /* LEFT PANEL */
+    .sidebar {
+      width: 320px;
+      background: white;
+      border-right: 1px solid #e0e0e0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .sidebar h2 { font-size: 18px; color: #333; }
+
+    .dropzone {
+      border: 2px dashed #ccc;
+      border-radius: 10px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      color: #888;
+      transition: all 0.2s;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: #4f46e5;
+      background: #f0f0ff;
+      color: #4f46e5;
+    }
+
+    .dropzone input { display: none; }
+
+    .upload-btn {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      width: 100%;
+    }
+
+    .upload-btn:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+    .upload-status { font-size: 13px; color: #555; min-height: 20px; }
+
+    .doc-list { flex: 1; overflow-y: auto; }
+    .doc-list h3 { font-size: 13px; color: #888; margin-bottom: 10px; }
+
+    .doc-item {
+      background: #f9f9f9;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: #333;
+      border-left: 3px solid #4f46e5;
+      word-break: break-all;
+    }
+
+    /* RIGHT PANEL */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    .chat-panel h2 { font-size: 18px; color: #333; }
+
+    .chat-window {
+      flex: 1;
+      background: white;
+      border-radius: 12px;
+      border: 1px solid #e0e0e0;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .message.user {
+      background: #4f46e5;
+      color: white;
+      align-self: flex-end;
+    }
+
+    .message.assistant {
+      background: #f3f4f6;
+      color: #333;
+      align-self: flex-start;
+    }
+
+    .sources {
+      font-size: 11px;
+      color: #888;
+      margin-top: 6px;
+    }
+
+    .placeholder {
+      text-align: center;
+      color: #bbb;
+      margin: auto;
+      font-size: 14px;
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .chat-input-row input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .chat-input-row input:focus { border-color: #4f46e5; }
+
+    .ask-btn {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .ask-btn:disabled { background: #a5b4fc; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT: Upload Panel -->
+  <div class="sidebar">
+    <h2>📁 Upload Documents</h2>
+
+    <div class="dropzone" id="dropzone"
+         onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" multiple
+             accept=".txt,.pdf,.docx,.csv,.xlsx,.png,.jpg,.jpeg"/>
+      <p>Click or drag files here</p>
+      <p style="font-size:12px;margin-top:6px;">
+        PDF, DOCX, TXT, CSV, XLSX, Images
+      </p>
+    </div>
+
+    <button class="upload-btn" id="uploadBtn" onclick="uploadFiles()">
+      Upload
+    </button>
+    <p class="upload-status" id="uploadStatus"></p>
+
+    <div class="doc-list">
+      <h3>UPLOADED DOCUMENTS</h3>
+      <div id="docList"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Chat Panel -->
+  <div class="chat-panel">
+    <h2>💬 Ask a Question</h2>
+
+    <div class="chat-window" id="chatWindow">
+      <p class="placeholder">
+        Upload documents and ask a question to get started.
+      </p>
+    </div>
+
+    <div class="chat-input-row">
+      <input type="text" id="questionInput"
+             placeholder="Ask something about your documents..."
+             onkeydown="if(event.key==='Enter') askQuestion()"/>
+      <button class="ask-btn" id="askBtn" onclick="askQuestion()">
+        Ask
+      </button>
+    </div>
+  </div>
+
+<script>
+  const API = "http://localhost:8000";
+
+  async function loadDocuments() {
+    try {
+      const res = await fetch(`${API}/documents`);
+      const data = await res.json();
+      const list = document.getElementById("docList");
+      list.innerHTML = "";
+      if (data.documents.length === 0) {
+        list.innerHTML = '<p style="font-size:13px;color:#bbb;">No documents yet</p>';
+      } else {
+        data.documents.forEach(doc => {
+          list.innerHTML += `<div class="doc-item">📄 ${doc}</div>`;
+        });
+      }
+    } catch (err) {
+      console.error("Could not load documents", err);
+    }
+  }
+
+  // Drag and drop
+  const dropzone = document.getElementById("dropzone");
+  dropzone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => {
+    dropzone.classList.remove("dragover");
+  });
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+    document.getElementById("fileInput").files = e.dataTransfer.files;
+    document.getElementById("uploadStatus").textContent =
+      `${e.dataTransfer.files.length} file(s) selected`;
+  });
+
+  async function uploadFiles() {
+    const files = document.getElementById("fileInput").files;
+    if (!files.length) return alert("Please select a file first.");
+
+    const btn = document.getElementById("uploadBtn");
+    const status = document.getElementById("uploadStatus");
+    btn.disabled = true;
+
+    for (const file of files) {
+      status.textContent = `Uploading ${file.name}...`;
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch(`${API}/upload`, {
+          method: "POST",
+          body: formData
+        });
+        const data = await res.json();
+        status.textContent = `✅ ${data.message}`;
+      } catch (err) {
+        status.textContent = `❌ Failed to upload ${file.name}`;
+      }
+    }
+
+    btn.disabled = false;
+    loadDocuments();
+  }
+
+  async function askQuestion() {
+    const input = document.getElementById("questionInput");
+    const question = input.value.trim();
+    if (!question) return;
+
+    const chatWindow = document.getElementById("chatWindow");
+
+    // Remove placeholder
+    const placeholder = chatWindow.querySelector(".placeholder");
+    if (placeholder) placeholder.remove();
+
+    // Add user message
+    chatWindow.innerHTML += `
+      <div class="message user">${question}</div>
+    `;
+    input.value = "";
+
+    // Add loading message
+    const loadingId = "loading-" + Date.now();
+    chatWindow.innerHTML += `
+      <div class="message assistant" id="${loadingId}">
+        ⏳ Searching documents and generating answer...
+      </div>
+    `;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+
+    const btn = document.getElementById("askBtn");
+    btn.disabled = true;
+
+    try {
+      const res = await fetch(`${API}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question })
+      });
+      const data = await res.json();
+
+      document.getElementById(loadingId).innerHTML = `
+        ${data.answer}
+        <div class="sources">📎 Sources: ${data.sources.join(", ")}</div>
+      `;
+    } catch (err) {
+      document.getElementById(loadingId).textContent =
+        "❌ Error getting answer. Is the server running?";
+    }
+
+    btn.disabled = false;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+
+  // Load docs on page open
+  loadDocuments();
+</script>
+</body>
+</html>
