@@ -25,4 +25,5 @@ if __name__ == "__main__":
     sample = "word " * 1200
     chunks = chunk_text(sample, "test.txt")
     print(f"Total chunks: {len(chunks)}")
-    print(f"First chunk preview: {chunks[0]['text'][:100]}")
+  
+    
